@@ -22,117 +22,169 @@ export interface OpenUCredentials {
 }
 
 export interface CourseInfo {
-  courseName: string;
-  testGrade: number;
-  finalGrade: Number;
+  course: string;
+  grades: {
+    test: Number;
+    final: Number;
+  };
 }
 
-async function shouldLogin(page: Page) {
-  await page.goto(URLS.GRADES);
+export interface GradesResult {
+  data: Array<CourseInfo>;
+  screenshot: Buffer;
+}
 
-  try {
-    const elem = await page.waitForSelector('.blue_title', {
-      timeout: 3000,
+export class OpenUClient {
+  private browser: puppeteer.Browser = null;
+  private credentials: OpenUCredentials;
+
+  constructor(credentials: OpenUCredentials) {
+    this.credentials = credentials;
+  }
+
+  private async shouldLogin(page: Page) {
+    await page.goto(URLS.GRADES);
+
+    try {
+      const elem = await page.waitForSelector('.blue_title', {
+        timeout: 100,
+      });
+
+      return elem == null;
+    } catch (e) {
+      if (e instanceof puppeteer.errors.TimeoutError) return true;
+      throw e;
+    }
+  }
+
+  private async login(page: Page, credentials: OpenUCredentials) {
+    console.log('navigating to login URL...');
+    await page.goto(URLS.LOGIN);
+
+    await page.waitForSelector('[name="p_user"]');
+    await page.waitForSelector('[name="p_sisma"]');
+    await page.waitForSelector('[name="p_mis_student"]');
+
+    console.log('typing login credentials...');
+    await page.type('[name="p_user"]', credentials.username);
+    await page.type('[name="p_sisma"]', credentials.password);
+    await page.type('[name="p_mis_student"]', credentials.id);
+
+    console.log('submitting login form...');
+    await page.waitForSelector('[type="submit"]');
+    await Promise.all([
+      page.click('[type="submit"]'),
+      page.waitForNavigation(),
+    ]);
+
+    this.saveCookies(await page.cookies());
+  }
+
+  private saveCookies(cookies) {
+    fs.writeFileSync(COOKIES_PATH, JSON.stringify(cookies, null, 2));
+  }
+
+  private async fetchGradesFromTable(page: Page): Promise<GradesResult> {
+    await page.goto(URLS.GRADES);
+    let data = [];
+
+    const tables = await page.$$('table');
+    const lastTable = tables[tables.length - 1];
+    const buffer = await lastTable.screenshot({
+      encoding: 'base64',
+    });
+    const screenshot = <Buffer>buffer;
+
+    const gradesTableData = await page.evaluate(() => {
+      const tables = document.getElementsByTagName('table');
+      const gradesTable = tables[tables.length - 1];
+      return Array.from(gradesTable.rows, (row) => {
+        const columns = row.querySelectorAll('td');
+        return Array.from(columns, (column) => column.innerText);
+      });
     });
 
-    return elem == null;
-  } catch (e) {
-    if (e instanceof puppeteer.errors.TimeoutError) return true;
-    throw e;
+    for (let i = 1; i < gradesTableData.length; i++) {
+      const row = gradesTableData[i];
+
+      const course = row[COURSE_NAME_INDEX].replace('\n', '');
+      const finalGrade = Number(row[FINAL_GRADE_INDEX]);
+      const testGrade = Number(row[TEST_GRADE_INDEX]);
+
+      // Skip courses that we do not have grades for yet.
+      if (finalGrade === 0 && testGrade === 0) continue;
+
+      data.push({
+        course,
+        grades: {
+          test: testGrade,
+          final: finalGrade,
+        },
+      });
+    }
+
+    return { data, screenshot };
   }
-}
 
-async function login(page, credentials: OpenUCredentials) {
-  console.log('navigating to login URL...');
-  await page.goto(URLS.LOGIN);
-
-  await page.waitForSelector('[name="p_user"]');
-  await page.waitForSelector('[name="p_sisma"]');
-  await page.waitForSelector('[name="p_mis_student"]');
-
-  console.log('typing login credentials...');
-  await page.type('[name="p_user"]', credentials.username);
-  await page.type('[name="p_sisma"]', credentials.password);
-  await page.type('[name="p_mis_student"]', credentials.id);
-
-  await page.waitForSelector('[type="submit"]');
-  await page.click('[type="submit"]');
-
-  console.log('submitting login form...');
-
-  await page.waitForSelector('.slick-choshen-main-page-single-click', {
-    timeout: 3000,
-  });
-
-  const cookies = await page.cookies();
-  fs.writeFileSync(COOKIES_PATH, JSON.stringify(cookies, null, 2));
-}
-
-async function fetchGradesFromTable(page: Page): Promise<Array<CourseInfo>> {
-  await page.goto(URLS.GRADES);
-
-  const gradesTableData = await page.evaluate(() => {
-    const tables = document.getElementsByTagName('table');
-    const gradesTable = tables[tables.length - 1];
-    return Array.from(gradesTable.rows, (row) => {
-      const columns = row.querySelectorAll('td');
-      return Array.from(columns, (column) => column.innerText);
+  public async init() {
+    this.browser = await puppeteer.launch({
+      headless: true,
+      userDataDir: USER_DATA_DIR,
+      devtools: true,
+      args: [
+        '--ignore-certificate-errors',
+        '--no-sandbox',
+        '--disable-setuid-sandbox',
+        '--disable-accelerated-2d-canvas',
+        '--disable-gpu',
+      ],
     });
-  });
-
-  let result: Array<CourseInfo> = [];
-
-  for (let i = 1; i < gradesTableData.length; i++) {
-    const row = gradesTableData[i];
-
-    const courseName = row[COURSE_NAME_INDEX].replace('\n', '');
-    const finalGrade = Number(row[FINAL_GRADE_INDEX]);
-    const testGrade = Number(row[TEST_GRADE_INDEX]);
-
-    // Skip courses without grades.
-    if (finalGrade === 0 && testGrade === 0) continue;
-
-    result.push({ courseName, testGrade, finalGrade });
   }
 
-  return result;
-}
-
-/**
- * Returns your current grades.
-   If needed, it performs a login process to access your data from OpenU.
-
- * @param  {Object} credentials     An object that contains `username`, `password` and `id`.
-                                    Used for authentication against OpenU.
- * @return {Object}                 A list of grade objects.
-                                    Each grade object contains `courseName`, `testGrade` and `finalGrade`.
- */
-
-export async function grades(
-  credentials: OpenUCredentials
-): Promise<Array<CourseInfo>> {
-  const browser = await puppeteer.launch({
-    headless: true,
-    userDataDir: USER_DATA_DIR,
-  });
-
-  const page = await browser.newPage();
-  page.setDefaultNavigationTimeout(0);
-
-  // If cookies availablee, load them.
-  if (fs.existsSync(COOKIES_PATH)) {
-    const cookies = JSON.parse(fs.readFileSync('./data/cookies.json', 'utf8'));
-    await page.setCookie.apply(page, cookies);
+  /**
+   *  Must be called in order to clear resources.
+   */
+  public async shutdown() {
+    return this.browser.close();
   }
 
-  if (await shouldLogin(page)) {
-    console.log('session does not exist, trying to login.');
-    await login(page, credentials);
-  } else {
-    console.log('using existing session');
+  private async setCookies(page: Page) {
+    if (fs.existsSync(COOKIES_PATH)) {
+      const cookies = JSON.parse(
+        fs.readFileSync('./data/cookies.json', 'utf8')
+      );
+      return page.setCookie.apply(page, cookies);
+    }
   }
 
-  const result = await fetchGradesFromTable(page);
-  await browser.close();
-  return result;
+  private async createPage() {
+    const page = await this.browser.newPage();
+    await page.setViewport({
+      width: 1200,
+      height: 800,
+      deviceScaleFactor: 2,
+    });
+    page.setDefaultNavigationTimeout(0);
+    return page;
+  }
+
+  /**
+   * Returns a list of grades.
+   * If needed, it performs a login process to access your data from OpenU.
+   */
+  public async grades(loginFn: Function = null): Promise<GradesResult> {
+    const page = await this.createPage();
+    await this.setCookies(page);
+
+    if (await this.shouldLogin(page)) {
+      if (loginFn) loginFn();
+
+      console.log('session does not exist, trying to login.');
+      await this.login(page, this.credentials);
+    } else {
+      console.log('using existing session');
+    }
+
+    return this.fetchGradesFromTable(page);
+  }
 }
