@@ -2,6 +2,8 @@ import { Context, Markup, Telegraf } from 'telegraf';
 import * as _ from 'lodash';
 import { CONSTANTS } from './constants';
 import { CourseInfo, OpenUClient, OpenUCredentials } from './lib/grades';
+const express = require('express');
+const app = express();
 
 const requiredParams = ['USER', 'PASSWORD', 'ID', 'BOT_TOKEN'];
 
@@ -20,6 +22,7 @@ const credentials: OpenUCredentials = {
 let config = {
   credentials,
 
+  telegramUsername: 'kubistikation',
   includeScreenshot: true,
   minGrade: process.env.MIN_GRADE || 85,
   showCredentials: process.env.DEBUG,
@@ -32,6 +35,22 @@ interface OpenUContext extends Context {
 let registered = [];
 
 const bot = new Telegraf<OpenUContext>(process.env.BOT_TOKEN);
+
+function authMiddleware() {
+  return (ctx: OpenUContext, next: Function) => {
+    const allowed = ctx.from.username === config.telegramUsername;
+
+    if (!allowed) {
+      console.warn(`user ${ctx.from.username} tried to access your bot!`);
+    } else {
+      console.log(`allowing bot acces to ${ctx.from.username}`);
+      return next();
+    }
+  };
+}
+
+bot.use(authMiddleware());
+
 const openu = new OpenUClient(credentials);
 
 function format(list: Array<CourseInfo>) {
@@ -56,14 +75,14 @@ bot.action('includePic', async (ctx) => {
   await ctx.answerCbQuery();
   ctx.editMessageReplyMarkup(null);
   config.includeScreenshot = true;
-  ctx.reply('עדכנתי את ההגדרות!');
+  ctx.reply(CONSTANTS.REPLY_MESSAGES.SETTINGS_UPDATED);
 });
 
 bot.action('dontIncludePic', async (ctx) => {
   await ctx.answerCbQuery();
   ctx.editMessageReplyMarkup(null);
   config.includeScreenshot = false;
-  ctx.reply('עדכנתי את ההגדרות!');
+  ctx.reply(CONSTANTS.REPLY_MESSAGES.SETTINGS_UPDATED);
 });
 
 function onBeforeLogin(ctx: OpenUContext) {
@@ -121,7 +140,7 @@ async function shutdown(signal: string) {
   bot.stop(signal);
 }
 
-function main() {
+async function main() {
   console.log('initiating...');
 
   bot.command('grades', handleGradesCommand);
@@ -130,10 +149,20 @@ function main() {
 
   if (config.showCredentials)
     console.log(`using credentials: ${JSON.stringify(credentials, null, 2)}`);
+  await openu.init();
 
-  openu.init();
+  if (process.env.NODE_ENV === 'production') {
+    const URL = 'https://kobi-openu-bot.herokuapp.com';
+    const PORT = process.env.PORT || 3000;
 
-  bot.launch();
+    bot.telegram.setWebhook(`${URL}/bot${process.env.BOT_TOKEN}`);
+    app.use(bot.webhookCallback(`/bot${process.env.BOT_TOKEN}`));
+    app.listen(PORT, () => {
+      console.log(`Server running on port ${PORT}`);
+    });
+  } else {
+    bot.launch();
+  }
 
   console.log('bot is up and running!');
 
@@ -141,4 +170,6 @@ function main() {
   process.once('SIGTERM', shutdown);
 }
 
-main();
+(async () => {
+  await main();
+})();
