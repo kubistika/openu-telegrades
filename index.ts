@@ -25,7 +25,7 @@ let config = {
   telegramUsername: 'kubistikation',
   includeScreenshot: true,
   minGrade: process.env.MIN_GRADE || 85,
-  showCredentials: process.env.DEBUG,
+  showCredentials: !(process.env.NODE_ENV === 'production'),
 };
 
 interface OpenUContext extends Context {

@@ -185,6 +185,8 @@ export class OpenUClient {
       console.log('using existing session');
     }
 
-    return this.fetchGradesFromTable(page);
+    const result = await this.fetchGradesFromTable(page);
+    await page.close();
+    return result;
   }
 }
