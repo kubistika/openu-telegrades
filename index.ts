@@ -2,8 +2,13 @@ import { Context, Markup, Telegraf } from 'telegraf';
 import * as _ from 'lodash';
 import { CONSTANTS } from './constants';
 import { CourseInfo, OpenUClient, OpenUCredentials } from './lib/grades';
-const express = require('express');
+import express = require('express');
 const app = express();
+
+enum ResultType {
+  text,
+  image,
+}
 
 const requiredParams = ['USER', 'PASSWORD', 'ID', 'BOT_TOKEN'];
 
@@ -23,7 +28,7 @@ let config = {
   credentials,
 
   telegramUsername: 'kubistikation',
-  includeScreenshot: true,
+  resultType: ResultType.image,
   minGrade: process.env.MIN_GRADE || 85,
   showCredentials: !(process.env.NODE_ENV === 'production'),
 };
@@ -63,46 +68,31 @@ function format(list: Array<CourseInfo>) {
 }
 
 async function configure(ctx: OpenUContext) {
-  await ctx.reply('להציג תמונה של טבלת הציונים?', {
+  await ctx.reply('איך תרצה לקבל את הציונים שלך?', {
     ...Markup.inlineKeyboard([
-      Markup.button.callback('כן 👍', 'includePic'),
-      Markup.button.callback('לא 👎', 'dontIncludePic'),
+      Markup.button.callback('בתמונה 😎', 'resultTypeImage'),
+      Markup.button.callback('בטקסט 💬', 'resultTypeText'),
     ]),
   });
 }
 
-bot.action('includePic', async (ctx) => {
+bot.action('resultTypeImage', async (ctx) => {
   await ctx.answerCbQuery();
   ctx.editMessageReplyMarkup(null);
-  config.includeScreenshot = true;
+  config.resultType = ResultType.image;
   ctx.reply(CONSTANTS.REPLY_MESSAGES.SETTINGS_UPDATED);
 });
 
-bot.action('dontIncludePic', async (ctx) => {
+bot.action('resultTypeText', async (ctx) => {
   await ctx.answerCbQuery();
   ctx.editMessageReplyMarkup(null);
-  config.includeScreenshot = false;
+  config.resultType = ResultType.text;
   ctx.reply(CONSTANTS.REPLY_MESSAGES.SETTINGS_UPDATED);
 });
 
 function onBeforeLogin(ctx: OpenUContext) {
   ctx.reply('מבצע התחברות...');
 }
-
-setInterval(() => {
-  registered.forEach(async (chatId) => {
-    const result = await openu.grades();
-    if (config.includeScreenshot) {
-      bot.telegram.sendPhoto(chatId, {
-        source: Buffer.from(result.screenshot.toString(), 'base64'),
-      });
-    }
-
-    bot.telegram.sendMessage(chatId, format(result.data), {
-      parse_mode: 'HTML',
-    });
-  });
-}, 1000 * 60 * 60 * 24);
 
 async function handleUpdates(ctx: OpenUContext) {
   ctx.reply('נרשמת לעדכונים!');
@@ -122,11 +112,14 @@ async function handleGradesCommand(ctx: OpenUContext) {
       await ctx.reply(CONSTANTS.REPLY_MESSAGES.NO_CHANGES);
     }
 
-    if (config.includeScreenshot) {
+    if (config.resultType === ResultType.image) {
       await ctx.replyWithPhoto({
         source: Buffer.from(result.screenshot.toString(), 'base64'),
       });
+
+      return;
     }
+
     await ctx.replyWithHTML(format(result.data));
   } catch (e) {
     ctx.reply(CONSTANTS.REPLY_MESSAGES.UNKNOWN_ERROR);
@@ -156,11 +149,15 @@ async function main() {
     const PORT = process.env.PORT || 3000;
 
     bot.telegram.setWebhook(`${URL}/bot${process.env.BOT_TOKEN}`);
+    app.get('/ping', (req, res) => {
+      return res.json({ ping: 'pong' });
+    });
     app.use(bot.webhookCallback(`/bot${process.env.BOT_TOKEN}`));
     app.listen(PORT, () => {
       console.log(`Server running on port ${PORT}`);
     });
   } else {
+    console.log('launching bot in dev mode.');
     bot.launch();
   }
 
