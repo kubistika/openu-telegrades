@@ -55,7 +55,7 @@ function authMiddleware() {
 
 bot.use(authMiddleware());
 
-const openu = new OpenUClient(credentials);
+const openu = new OpenUClient();
 
 function format(list: Array<CourseInfo>) {
   return list
@@ -89,8 +89,9 @@ bot.action('resultTypeText', async (ctx) => {
   ctx.reply(CONSTANTS.REPLY_MESSAGES.SETTINGS_UPDATED);
 });
 
-function onBeforeLogin(ctx: OpenUContext) {
+function onAuthRequired(ctx: OpenUContext): OpenUCredentials {
   ctx.reply('מבצע התחברות...');
+  return config.credentials;
 }
 
 async function handleUpdates(ctx: OpenUContext) {
@@ -102,7 +103,7 @@ async function handleGradesCommand(ctx: OpenUContext) {
   await ctx.reply(CONSTANTS.REPLY_MESSAGES.CHECKING_GRADES);
 
   try {
-    const result = await openu.grades(() => onBeforeLogin(ctx));
+    const result = await openu.grades(() => onAuthRequired(ctx));
 
     if (ctx.cache && !_.isEqual(result.data, ctx.cache)) {
       await ctx.reply(CONSTANTS.REPLY_MESSAGES.NEW_GRADES);
