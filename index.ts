@@ -3,7 +3,6 @@ import * as _ from 'lodash';
 import { CONSTANTS } from './constants';
 import { CourseInfo, OpenUClient, OpenUCredentials } from './lib/grades';
 import express = require('express');
-const app = express();
 
 enum ResultType {
   text,
@@ -100,7 +99,7 @@ async function handleUpdates(ctx: OpenUContext) {
 }
 
 async function handleGradesCommand(ctx: OpenUContext) {
-  ctx.reply(CONSTANTS.REPLY_MESSAGES.CHECKING_GRADES);
+  await ctx.reply(CONSTANTS.REPLY_MESSAGES.CHECKING_GRADES);
 
   try {
     const result = await openu.grades(() => onBeforeLogin(ctx));
@@ -122,7 +121,7 @@ async function handleGradesCommand(ctx: OpenUContext) {
 
     await ctx.replyWithHTML(format(result.data));
   } catch (e) {
-    ctx.reply(CONSTANTS.REPLY_MESSAGES.UNKNOWN_ERROR);
+    await ctx.reply(CONSTANTS.REPLY_MESSAGES.UNKNOWN_ERROR);
     console.log(e);
   }
 }
@@ -131,6 +130,16 @@ async function shutdown(signal: string) {
   console.log('shutdown...');
   await openu.shutdown();
   bot.stop(signal);
+}
+
+function startWebhook(app: express.Application, port: Number) {
+  app.get('/ping', (req, res) => {
+    return res.json({ ping: 'pong' });
+  });
+  app.use(bot.webhookCallback(`/bot${process.env.BOT_TOKEN}`));
+  app.listen(port, () => {
+    console.log(`Server running on port ${port}`);
+  });
 }
 
 async function main() {
@@ -146,16 +155,9 @@ async function main() {
 
   if (process.env.NODE_ENV === 'production') {
     const URL = 'https://kobi-openu-bot.herokuapp.com';
-    const PORT = process.env.PORT || 3000;
-
+    const app = express();
+    startWebhook(app, Number(process.env.PORT) || 3000);
     bot.telegram.setWebhook(`${URL}/bot${process.env.BOT_TOKEN}`);
-    app.get('/ping', (req, res) => {
-      return res.json({ ping: 'pong' });
-    });
-    app.use(bot.webhookCallback(`/bot${process.env.BOT_TOKEN}`));
-    app.listen(PORT, () => {
-      console.log(`Server running on port ${PORT}`);
-    });
   } else {
     console.log('launching bot in dev mode.');
     bot.launch();
