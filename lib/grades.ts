@@ -2,8 +2,11 @@ import { Page } from 'puppeteer';
 import fs = require('fs');
 import puppeteer = require('puppeteer');
 
+// Add stealth plugin and use defaults (all tricks to hide puppeteer usage)
 const USER_DATA_DIR = './data';
 const COOKIES_PATH = './data/cookies.json';
+const FAKE_USER_AGENT =
+  'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/72.0.3626.121 Safari/537.36';
 
 const FINAL_GRADE_INDEX = 4;
 const TEST_GRADE_INDEX = 5;
@@ -172,6 +175,10 @@ export class OpenUClient {
     page.setDefaultNavigationTimeout(0);
     page.setDefaultTimeout(0);
     page.setRequestInterception(false);
+
+    // Set fake user agent.
+    await page.setUserAgent(FAKE_USER_AGENT);
+
     return page;
   }
 

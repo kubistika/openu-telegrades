@@ -145,12 +145,22 @@ function startWebhook(app: express.Application, port: Number) {
   });
 }
 
+function onError(e: any, ctx: OpenUContext) {
+  console.log('error occured');
+  console.log(e);
+
+  if (!ctx) return;
+
+  ctx.reply(CONSTANTS.REPLY_MESSAGES.UNKNOWN_ERROR);
+}
+
 async function main() {
   console.log('initiating...');
 
   bot.command('grades', handleGradesCommand);
   bot.command('configure', configure);
   bot.command('updates', handleUpdates);
+  bot.catch(onError);
 
   if (config.showCredentials)
     console.log(`using credentials: ${JSON.stringify(credentials, null, 2)}`);
