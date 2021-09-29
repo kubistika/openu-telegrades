@@ -5,5 +5,6 @@ export const CONSTANTS = {
     NO_CHANGES: '😅 לא השתנה כלום מהפעם האחרונה שבדקת.',
     NEW_GRADES: '🥳 יש ציונים חדשים!',
     SETTINGS_UPDATED: 'עדכנתי את ההגדרות! ✅',
+    NOT_AUTHORIZED: 'אסור לי לדבר איתך 😔',
   },
 };

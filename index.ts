@@ -41,11 +41,12 @@ let registered = [];
 const bot = new Telegraf<OpenUContext>(process.env.BOT_TOKEN);
 
 function authMiddleware() {
-  return (ctx: OpenUContext, next: Function) => {
+  return async (ctx: OpenUContext, next: Function) => {
     const allowed = ctx.from.username === config.telegramUsername;
 
     if (!allowed) {
       console.warn(`user ${ctx.from.username} tried to access your bot!`);
+      await ctx.reply(CONSTANTS.REPLY_MESSAGES.NOT_AUTHORIZED);
     } else {
       console.log(`allowing bot acces to ${ctx.from.username}`);
       return next();
@@ -103,6 +104,7 @@ async function handleGradesCommand(ctx: OpenUContext) {
   await ctx.reply(CONSTANTS.REPLY_MESSAGES.CHECKING_GRADES);
 
   try {
+    ctx.replyWithChatAction('upload_photo');
     const result = await openu.grades(() => onAuthRequired(ctx));
 
     if (ctx.cache && !_.isEqual(result.data, ctx.cache)) {
