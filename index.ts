@@ -1,15 +1,16 @@
 import { Context, Markup, Telegraf } from 'telegraf';
 import * as _ from 'lodash';
-import { CONSTANTS } from './constants';
+import { CONSTANTS, ACTIONS } from './constants';
 import { CourseInfo, OpenUClient, OpenUCredentials } from './lib/grades';
 import express = require('express');
 
-enum ResultType {
-  text,
-  image,
-}
-
-const requiredParams = ['USER', 'PASSWORD', 'ID', 'BOT_TOKEN'];
+const requiredParams = [
+  'TELEGRAM_USERNAME',
+  'USER',
+  'PASSWORD',
+  'ID',
+  'BOT_TOKEN',
+];
 
 requiredParams.forEach((param) => {
   const value = process.env[param];
@@ -26,17 +27,13 @@ const credentials: OpenUCredentials = {
 let config = {
   credentials,
 
-  telegramUsername: 'kubistikation',
-  resultType: ResultType.image,
-  minGrade: process.env.MIN_GRADE || 85,
+  telegramUsername: process.env.TELEGRAM_USERNAME,
   showCredentials: !(process.env.NODE_ENV === 'production'),
 };
 
 interface OpenUContext extends Context {
   cache: Array<CourseInfo>;
 }
-
-let registered = [];
 
 const bot = new Telegraf<OpenUContext>(process.env.BOT_TOKEN);
 
@@ -58,77 +55,40 @@ bot.use(authMiddleware());
 
 const openu = new OpenUClient();
 
-function format(list: Array<CourseInfo>) {
-  return list
-    .map((c) => {
-      const status = c.grades.final >= config.minGrade ? '✅' : '❗️';
-      return `<b>${c.course}</b>: מבחן: ${c.grades.test}, סופי: ${c.grades.final} ${status}`;
-    })
-    .join('\n');
-}
-
 async function configure(ctx: OpenUContext) {
   await ctx.reply('איך תרצה לקבל את הציונים שלך?', {
     ...Markup.inlineKeyboard([
-      Markup.button.callback('בתמונה 😎', 'resultTypeImage'),
-      Markup.button.callback('בטקסט 💬', 'resultTypeText'),
+      Markup.button.callback('בתמונה 😎', ACTIONS.SET_RESULT_TYPE_IMAGE),
+      Markup.button.callback('בטקסט 💬', ACTIONS.SET_RESULT_TYPE_TEXT),
     ]),
   });
 }
-
-bot.action('resultTypeImage', async (ctx) => {
-  await ctx.answerCbQuery();
-  ctx.editMessageReplyMarkup(null);
-  config.resultType = ResultType.image;
-  ctx.reply(CONSTANTS.REPLY_MESSAGES.SETTINGS_UPDATED);
-});
-
-bot.action('resultTypeText', async (ctx) => {
-  await ctx.answerCbQuery();
-  ctx.editMessageReplyMarkup(null);
-  config.resultType = ResultType.text;
-  ctx.reply(CONSTANTS.REPLY_MESSAGES.SETTINGS_UPDATED);
-});
 
 function onAuthRequired(ctx: OpenUContext): OpenUCredentials {
   ctx.reply('מבצע התחברות...');
   return config.credentials;
 }
 
-async function handleUpdates(ctx: OpenUContext) {
-  ctx.reply('נרשמת לעדכונים!');
-  registered.push(ctx.chat.id);
-}
-
 async function handleGradesCommand(ctx: OpenUContext) {
   await ctx.reply(CONSTANTS.REPLY_MESSAGES.CHECKING_GRADES);
-
   ctx.replyWithChatAction('upload_photo');
+
   const result = await openu.grades(() => onAuthRequired(ctx));
+  let textUpdate: string;
 
   if (ctx.cache && !_.isEqual(result.data, ctx.cache)) {
-    await ctx.reply(CONSTANTS.REPLY_MESSAGES.NEW_GRADES);
+    textUpdate = CONSTANTS.REPLY_MESSAGES.NEW_GRADES;
     ctx.cache = result.data;
   } else {
-    await ctx.reply(CONSTANTS.REPLY_MESSAGES.NO_CHANGES);
+    textUpdate = CONSTANTS.REPLY_MESSAGES.NO_CHANGES;
   }
 
-  // Return the result to the user, according to the configured result type.
-  switch (config.resultType) {
-    case ResultType.image:
-      await ctx.replyWithPhoto({
-        source: Buffer.from(result.screenshot.toString(), 'base64'),
-      });
-      break;
-
-    case ResultType.text:
-      await ctx.replyWithHTML(format(result.data));
-      break;
-
-    default:
-      console.warn('invalid value for `config.resultType`');
-      break;
-  }
+  await ctx.replyWithPhoto(
+    {
+      source: Buffer.from(result.screenshot.toString(), 'base64'),
+    },
+    { caption: textUpdate }
+  );
 }
 
 async function shutdown(signal: string) {
@@ -161,7 +121,6 @@ async function main() {
 
   bot.command('grades', handleGradesCommand);
   bot.command('configure', configure);
-  bot.command('updates', handleUpdates);
   bot.catch(onError);
 
   if (config.showCredentials)

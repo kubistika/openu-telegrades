@@ -8,3 +8,9 @@ export const CONSTANTS = {
     NOT_AUTHORIZED: 'אסור לי לדבר איתך 😔',
   },
 };
+
+export const ACTIONS = {
+  SET_CREDENTIALS: 'set_credentials',
+  SET_RESULT_TYPE_IMAGE: 'set_result_type_image',
+  SET_RESULT_TYPE_TEXT: 'set_result_type_text',
+};
