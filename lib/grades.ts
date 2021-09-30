@@ -43,10 +43,10 @@ export class OpenUClient {
   private async shouldLogin(page: Page) {
     try {
       console.log('shouldLogin: before page.goto');
-      await page.goto(URLS.GRADES, { waitUntil: 'networkidle2' });
+      await page.goto(URLS.GRADES);
       console.log('should login: before wait for selector');
       const elem = await page.waitForSelector('.blue_title', {
-        timeout: 1000,
+        timeout: 100,
       });
       console.log('should login: after wait for selector');
 
