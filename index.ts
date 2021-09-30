@@ -103,29 +103,31 @@ async function handleUpdates(ctx: OpenUContext) {
 async function handleGradesCommand(ctx: OpenUContext) {
   await ctx.reply(CONSTANTS.REPLY_MESSAGES.CHECKING_GRADES);
 
-  try {
-    ctx.replyWithChatAction('upload_photo');
-    const result = await openu.grades(() => onAuthRequired(ctx));
+  ctx.replyWithChatAction('upload_photo');
+  const result = await openu.grades(() => onAuthRequired(ctx));
 
-    if (ctx.cache && !_.isEqual(result.data, ctx.cache)) {
-      await ctx.reply(CONSTANTS.REPLY_MESSAGES.NEW_GRADES);
-      ctx.cache = result.data;
-    } else {
-      await ctx.reply(CONSTANTS.REPLY_MESSAGES.NO_CHANGES);
-    }
+  if (ctx.cache && !_.isEqual(result.data, ctx.cache)) {
+    await ctx.reply(CONSTANTS.REPLY_MESSAGES.NEW_GRADES);
+    ctx.cache = result.data;
+  } else {
+    await ctx.reply(CONSTANTS.REPLY_MESSAGES.NO_CHANGES);
+  }
 
-    if (config.resultType === ResultType.image) {
+  // Return the result to the user, according to the configured result type.
+  switch (config.resultType) {
+    case ResultType.image:
       await ctx.replyWithPhoto({
         source: Buffer.from(result.screenshot.toString(), 'base64'),
       });
+      break;
 
-      return;
-    }
+    case ResultType.text:
+      await ctx.replyWithHTML(format(result.data));
+      break;
 
-    await ctx.replyWithHTML(format(result.data));
-  } catch (e) {
-    await ctx.reply(CONSTANTS.REPLY_MESSAGES.UNKNOWN_ERROR);
-    console.log(e);
+    default:
+      console.warn('invalid value for `config.resultType`');
+      break;
   }
 }
 

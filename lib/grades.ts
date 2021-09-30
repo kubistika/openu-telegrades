@@ -43,7 +43,7 @@ export class OpenUClient {
   private async shouldLogin(page: Page) {
     try {
       console.log('shouldLogin: before page.goto');
-      await page.goto(URLS.GRADES);
+      await page.goto(URLS.GRADES, { waitUntil: 'networkidle2' });
       console.log('should login: before wait for selector');
       const elem = await page.waitForSelector('.blue_title', {
         timeout: 1000,
@@ -93,9 +93,9 @@ export class OpenUClient {
     let data = [];
 
     const tables = await page.$$('table');
-    if (!tables || tables.length === 0) {
-      throw 'Could not find the grades tables';
-    }
+    if (!tables || tables.length === 0)
+      throw new Error('Could not find the grades tables');
+
     const lastTable = tables[tables.length - 1];
     const buffer = await lastTable.screenshot({
       encoding: 'base64',
@@ -172,6 +172,11 @@ export class OpenUClient {
       deviceScaleFactor: 2,
     });
 
+    page.on('dialog', async (dialog) => {
+      console.log(`got dialog: ${dialog.message()}`);
+      await dialog.accept();
+    });
+
     page.setDefaultNavigationTimeout(0);
     page.setDefaultTimeout(0);
     page.setRequestInterception(false);
@@ -185,16 +190,16 @@ export class OpenUClient {
   /**
    * Returns a list of grades.
    * If needed, it performs a login process to access your data from OpenU.
+   *
+   * param @authFn a callback function to resolve credentials.
    */
   public async grades(authFn: () => OpenUCredentials): Promise<GradesResult> {
     const page = await this.createPage();
     await this.setCookies(page);
 
     if (await this.shouldLogin(page)) {
-      const credentials = authFn();
-
       console.log('session does not exist, trying to login.');
-      await this.login(page, credentials);
+      await this.login(page, authFn());
       console.log('login success');
     } else {
       console.log('using existing session');
